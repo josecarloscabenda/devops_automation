@@ -74,7 +74,7 @@ Instalo **à medida que chego a cada módulo**, não tudo de uma vez.
 | Módulo | Precisa de | Estado inicial |
 |---|---|---|
 | 00, 01 — intro, git/linux/vi | git, vi, coreutils | ✅ já tenho |
-| 02 — Docker | integração WSL do Docker Desktop | ⚠️ ver secção 5 |
+| 02 — Docker | integração WSL do Docker Desktop | ✅ ativo e validado |
 | 03 — Cloud AWS/Azure | aws cli, az cli (+ `unzip`) | ❌ instalar |
 | 04 — Terraform | terraform (+ `gnupg`) | ❌ instalar |
 | 05 — Automação CLI | aws/az cli + `jq` | ❌ instalar |
@@ -173,27 +173,62 @@ sudo apt install -y python3-pip python3-venv
 
 ---
 
-## 5. Pendente: Docker no WSL
+## 5. Docker no WSL — ✅ resolvido (2026-11-08)
 
-**A integração WSL do Docker Desktop está desligada para a distro Ubuntu.**
-
-Sintoma: `docker` aparece no `PATH` do Ubuntu (herdado do Windows) mas ao executar dá:
-
-```
-The command 'docker' could not be found in this WSL 2 distro.
-```
-
-Não existe `/var/run/docker.sock` nem `/mnt/wsl/docker-desktop`.
-
-**Como resolver** (GUI, antes do módulo 02):
-Docker Desktop → Settings → Resources → WSL Integration → ativar `Ubuntu` → Apply & Restart
-
-Validar:
+Integração WSL do Docker Desktop ativa para a distro `Ubuntu`. Validado:
+client **29.6.1** ↔ server **29.6.1** (linux/amd64), Compose **v5.3.0**, buildx **v0.35.0**,
+`hello-world`, build de imagem, bind mount do repo, porta publicada e `compose up`
+com `curl` a responder 200. O módulo 02 está desbloqueado.
 
 ```bash
+# validação rápida
 docker version
 docker run --rm hello-world
 ```
+
+### Se voltar a falhar: como diagnosticar
+
+Sintoma: `docker` aparece no `PATH` do Ubuntu (herdado do Windows) mas ao executar dá
+`The command 'docker' could not be found in this WSL 2 distro.`
+
+Ordem de diagnóstico — **não assumir que é a integração**, porque o sintoma é o mesmo
+quando o motor está em baixo:
+
+1. **O motor Linux está vivo?** No Windows: `docker version`. Se der
+   `500 Internal Server Error` no pipe `dockerDesktopLinuxEngine`, o motor está em baixo —
+   a integração não é o problema.
+2. **A distro `docker-desktop` está a correr?** `wsl --list --verbose`. Com o motor WSL2
+   saudável tem de estar `Running`. Se estiver `Stopped` com o Docker Desktop aberto,
+   o motor não subiu.
+3. **Logs do motor:** `%LOCALAPPDATA%\Docker\log\vm\init.log` — procurar
+   `dockerd exited due to explicit Stop() call` e `VM is ready to be powered off`.
+4. **Estado real da integração:** `%LOCALAPPDATA%\Docker\log\host\com.docker.backend.exe.log`,
+   procurar `wslintegration`. A linha mostra o estado verdadeiro, ex.:
+   `EnableIntegrationWithDefaultWslDistro:false, IntegratedWslDistros:[]string{}`.
+5. **Artefactos dentro da distro** (existem só se a integração foi provisionada):
+   `/usr/bin/docker` (symlink para `/mnt/wsl/docker-desktop/cli-tools/usr/bin/docker`),
+   `/var/run/docker.sock`, e o user no grupo `docker`.
+
+### Armadilha que me aconteceu
+
+Cliquei em **Apply & Restart** e o Docker Desktop parou o motor mas **nunca o voltou a
+ligar** — ficou preso a meio do restart. Resultado: a definição da integração nunca foi
+gravada, mas a GUI dava a impressão de que tinha sido aplicada. Correção: matar os
+processos do Docker Desktop, `wsl --shutdown`, relançar, e só depois aplicar a integração.
+
+### Aplicar a integração sem a GUI
+
+As definições vivem em `%APPDATA%\Docker\settings-store.json`. **Com o Docker Desktop
+fechado** (senão é sobrescrito), as chaves são:
+
+```json
+{
+  "EnableIntegrationWithDefaultWslDistro": true,
+  "IntegratedWslDistros": ["Ubuntu"]
+}
+```
+
+Fazer backup do ficheiro antes de editar. Depois arrancar o Docker Desktop e validar.
 
 ---
 
