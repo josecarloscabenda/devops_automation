@@ -20,13 +20,56 @@ Criado em 2026-11-08.
 **Os labs correm no WSL**, não no Windows. Os comandos do curso são todos Linux/apt,
 e o filesystem nativo do WSL é muito mais rápido que `/mnt/c`.
 
-```bash
-wsl -d Ubuntu
-cd ~/devops_automation
+```powershell
+wsl --cd ~/devops_automation
 ```
 
 > ⚠️ Os dois clones são cópias independentes do mesmo fork. Commit num lado exige
 > `git pull` no outro.
+
+### PowerShell vs WSL — dois mundos, nunca os dois ao mesmo tempo
+
+**Não existe "PowerShell com o WSL ativado".** O comando `wsl` não ativa nada no
+PowerShell — ele **troca-me** de shell. Estou sempre num mundo ou no outro.
+
+| | PowerShell | Dentro do WSL |
+|---|---|---|
+| Prompt | `PS C:\Users\...>` | `carlos_cabenda@DESKTOP-NDE0RBK:~$` |
+| Shell | PowerShell | bash (Linux) |
+| `apt`, `apt install` | ❌ não existe | ✅ |
+| Comandos do curso | ❌ não correm | ✅ correm tal e qual |
+| Sair | — | `exit` volta ao PowerShell |
+
+Regra prática: **olhar para o prompt**. Se vejo `PS` e uma letra de drive, estou no
+Windows e os comandos do curso não funcionam. Se vejo `carlos_cabenda@...$`, estou no
+Linux e posso colar tudo.
+
+#### Armadilha 1: o `sudo` existe no PowerShell
+
+O Windows 11 tem o seu próprio `sudo.exe`, que **não** é o `sudo` do Linux. Se colar
+`sudo apt install -y unzip` no PowerShell por engano, não recebo um limpo "comando não
+encontrado" — o Windows corre o `sudo` dele e dá um erro confuso sobre o `apt`. É o tipo
+de erro que faz perder meia hora a pensar que o WSL está mal configurado.
+
+#### Armadilha 2: `wsl` não aterra na home
+
+Escrever `wsl` estando numa pasta do Windows aterra no **caminho traduzido**, não na home:
+
+```
+pasta no Windows:  C:\Users\Carlos Cabenda\Documents\MyReposDev\DevOps\devops_automation
+pwd dentro do WSL: /mnt/c/Users/Carlos Cabenda/Documents/MyReposDev/DevOps/devops_automation
+```
+
+Isso põe-me no **clone errado** (o do Windows) e no filesystem lento. Por isso entro
+sempre com o caminho explícito:
+
+```powershell
+wsl --cd ~/devops_automation    # aterra em /home/carlos_cabenda/devops_automation
+wsl --cd ~                      # aterra em /home/carlos_cabenda
+```
+
+Alternativa mais confortável: abrir o **Windows Terminal** e escolher o perfil **Ubuntu**
+no dropdown — nem passo pelo PowerShell, abre já em bash na minha home.
 
 ---
 
@@ -186,6 +229,56 @@ docker version
 docker run --rm hello-world
 ```
 
+### ⚠️ Resource Saver — isto vai voltar a acontecer
+
+**O caso mais provável de o docker "deixar de funcionar" no WSL.** Aconteceu-me no mesmo
+dia, 2h depois de validar tudo.
+
+O Resource Saver do Docker Desktop (**ligado por omissão**) adormece o motor Linux após
+~10 min sem uso. Ao adormecer, **desmonta a integração do Ubuntu** — no log:
+`engine linux/wsl stopping hypervisor process` seguido de
+`cleaning up agent for distro Ubuntu`. O `/mnt/wsl/docker-desktop` desaparece e o
+`/usr/bin/docker` fica um symlink pendurado.
+
+O comando então cai no shim do Windows, que imprime:
+
+```
+The command 'docker' could not be found in this WSL 2 distro.
+We recommend to activate the WSL integration in Docker Desktop settings.
+```
+
+**Esta mensagem é enganadora** — a integração *está* ligada. O erro não tem nada a ver
+com configuração. Não voltar a mexer no toggle por causa disto.
+
+#### Como distinguir, em 1 comando
+
+| `docker ps` no Windows | `docker ps` no WSL | Causa | Ação |
+|---|---|---|---|
+| ✅ funciona | ❌ falha | motor adormecido, integração desmontada | acordar o motor |
+| ❌ erro 500 | ❌ falha | motor em baixo | reiniciar Docker Desktop |
+
+#### Acordar o motor sem sair do WSL
+
+```bash
+docker.exe ps        # fala com a API do Windows e dispara o resume
+# esperar ~10-20s
+docker run hello-world
+```
+
+O `docker.exe` é alcançável de dentro do Ubuntu (em `/Docker/host/bin/docker.exe`,
+injetado pelo Docker Desktop). A integração **reconstrói-se sozinha** quando o motor
+volta — symlink e socket são recriados, sem precisar de tocar em settings.
+
+#### Correção durável
+
+**Docker Desktop → Settings → Resources → secção *Resource Saver*** (em algumas versões
+dentro de *Advanced*) → desligar. Tem de ser na GUI: ao contrário das chaves da integração
+WSL, o nome da chave do Resource Saver não aparece nos logs, por isso não vale a pena
+adivinhar no `settings-store.json`.
+
+Se preferir manter ligado (poupa RAM e bateria), o hábito é correr `docker.exe ps` antes
+de começar os labs.
+
 ### Se voltar a falhar: como diagnosticar
 
 Sintoma: `docker` aparece no `PATH` do Ubuntu (herdado do Windows) mas ao executar dá
@@ -209,7 +302,7 @@ quando o motor está em baixo:
    `/usr/bin/docker` (symlink para `/mnt/wsl/docker-desktop/cli-tools/usr/bin/docker`),
    `/var/run/docker.sock`, e o user no grupo `docker`.
 
-### Armadilha que me aconteceu
+### Armadilha do primeiro dia: Apply & Restart preso
 
 Cliquei em **Apply & Restart** e o Docker Desktop parou o motor mas **nunca o voltou a
 ligar** — ficou preso a meio do restart. Resultado: a definição da integração nunca foi
