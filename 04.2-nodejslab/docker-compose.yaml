@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  node-app:
+    build:
+      context: ./app
+      dockerfile: dockerfile
+    ports:
+      - "3000:3000"
+    container_name: node_compose_app
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://devuser:devpass@db:5432/devdb
+
+  db:
+    image: postgres:15
+    container_name: postgres_compose_db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: devdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
