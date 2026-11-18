@@ -1,0 +1,8 @@
+# Credenciais e segredos — nunca commitar
+*accessKeys*.csv
+*credentials*.csv
+*.pem
+*.key
+.env
+.env.*
+!.env.example
